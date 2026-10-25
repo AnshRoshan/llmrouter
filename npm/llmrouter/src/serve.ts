@@ -2,8 +2,9 @@
  * `llmrouter serve` — the decision engine as an HTTP decide-sidecar.
  *
  *   POST /decide   {RoutingRequest payload}  -> {Decision payload}
+ *                  {"requests": [payload, ...]} -> {"decisions": [...]}
  *   GET  /stats    session/backend telemetry
- *   GET  /healthz  liveness
+ *   GET  /healthz  liveness + fleet size + version
  *
  * Wire-compatible with the Python `llmrouter serve` (same snake_case payloads)
  * and with `llmrouter-state-v1` snapshots via store.ts, so a LiteLLM/Bifrost/
@@ -23,8 +24,10 @@ import { PriceRegistry } from "./pricing.js";
 import { WorkloadResolver } from "./signals.js";
 import { restoreSnapshot, takeSnapshot, type Snapshot } from "./store.js";
 import { DeploymentClass, RoutingRequest } from "./types.js";
+import { VERSION } from "./version.js";
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const MAX_BATCH = 256;
 
 export interface Sidecar {
   server: Server;
@@ -79,6 +82,59 @@ function send(res: ServerResponse, status: number, obj: unknown): void {
   res.end(body);
 }
 
+function decideOne(
+  engine: PolicyEngine, payload: Record<string, any>,
+): Record<string, unknown> {
+  const decided = RoutingRequest.fromPayload(payload); // throws -> 400 upstream
+  // Fold the previous turn's provider counters in FIRST, so this decision
+  // already sees the learned hit rate (same order as the Python sidecar).
+  const usage = payload.observed_usage;
+  if (usage) {
+    const sess = engine.sessions.peek(decided.stickyKey());
+    if (sess) {
+      sess.recordUsage(
+        Number(usage.cache_read_tokens ?? 0),
+        Number(usage.cache_write_tokens ?? 0),
+      );
+      engine.sessions.put(sess);
+    }
+  }
+  const decision = engine.decide(decided); // throws -> 422 upstream
+  engine.recordDecision(decided, decision, usage ? {
+    cacheReadTokens: Number(usage.cache_read_tokens ?? 0),
+    cacheWriteTokens: Number(usage.cache_write_tokens ?? 0),
+  } : undefined);
+  return decision.toPayload();
+}
+
+function decideBatch(
+  engine: PolicyEngine, payload: Record<string, any>, res: ServerResponse,
+): void {
+  const requests = payload.requests;
+  if (!Array.isArray(requests) || requests.length === 0) {
+    return send(res, 400, { error: '"requests" must be a non-empty array' });
+  }
+  if (requests.length > MAX_BATCH) {
+    return send(res, 400, { error: `batch is limited to ${MAX_BATCH} requests` });
+  }
+  const decisions: Record<string, unknown>[] = [];
+  try {
+    for (const item of requests) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) {
+        return send(res, 400, { error: "batch items must be JSON objects" });
+      }
+      decisions.push(decideOne(engine, item));
+    }
+  } catch (err) {
+    // All-or-nothing: a batch is one scoring pass for the caller's fan-out,
+    // so a dead fleet fails the batch rather than half-filling.
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = /no price card|workload/i.test(msg) ? 400 : 422;
+    return send(res, status, { error: msg });
+  }
+  return send(res, 200, { decisions });
+}
+
 export function createDecideServer(options: {
   host?: string;
   port?: number;
@@ -102,7 +158,13 @@ export function createDecideServer(options: {
     }
     const path = (req.url ?? "").split("?")[0];
     if (req.method === "GET" && path === "/healthz") {
-      return send(res, 200, { ok: true, engine: "llmrouter" });
+      return send(res, 200, {
+        ok: true,
+        engine: "llmrouter",
+        version: VERSION,
+        models: engine.prices.size,
+        backends: engine.backends.size,
+      });
     }
     if (req.method === "GET" && path === "/stats") {
       const backends: Record<string, unknown> = {};
@@ -131,6 +193,13 @@ export function createDecideServer(options: {
           error: `invalid JSON: ${err instanceof Error ? err.message : err}`,
         });
       }
+      // Batch form: {"requests": [...]} -> {"decisions": [...]} — one
+      // round-trip for gateways scoring a fan-out. Single-request form is
+      // unchanged, so existing gateway clients keep working.
+      if (Array.isArray(payload.requests)) {
+        return decideBatch(engine, payload, res);
+      }
+
       let decided: RoutingRequest;
       try {
         decided = RoutingRequest.fromPayload(payload);

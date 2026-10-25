@@ -135,18 +135,22 @@ export class PolicyEngine {
 
   estimateTurnCost(
     card: PriceCard, prefixTokens: number, hitRate: number, outputTokens = 500,
+    atUtc: Date | null = null,
   ): number {
     const cached = Math.trunc(prefixTokens * hitRate);
     const uncached = prefixTokens - cached;
     const sticker =
-      card.cacheReadCost(cached) + card.inputCost(uncached) + card.outputCost(outputTokens);
+      card.cacheReadCost(cached, atUtc) +
+      card.inputCost(uncached, atUtc) +
+      card.outputCost(outputTokens);
     return sticker * card.taskCostMultiplier;
   }
 
   // ------------------------------------------------------------------ //
   // the decision
   // ------------------------------------------------------------------ //
-  decide(req: RoutingRequest, now: number = nowMonotonic()): Decision {
+  decide(req: RoutingRequest, now: number = nowMonotonic(),
+        atUtc: Date | null = null): Decision {
     const reasons: string[] = [];
     const w = this.config.weights;
 
@@ -217,7 +221,7 @@ export class PolicyEngine {
         }
         if (ruleFInvalidated) hitRate = 0.0;
 
-        const turnCost = this.estimateTurnCost(card, prefixTokens, hitRate);
+        const turnCost = this.estimateTurnCost(card, prefixTokens, hitRate, 500, atUtc);
         const cost = turnCost * backend.costFactor;
 
         const health = this.backends.health(backend.backendId);

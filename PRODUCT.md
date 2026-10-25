@@ -10,7 +10,7 @@
   parity). Visitor: backend/ML platform engineers paying LLM bills.
 - **Action wanted**: `pip install llmrouter` / `npm install llmrouter`, open
   the playground, read the source.
-- **Proof that exists**: paired test suites (241 py / 37 node), 14/14
+- **Proof that exists**: paired test suites (252 py / 42 node), 14/14
   cross-runtime parity, verified formulas (R*=4.75, E*=0.652), honest 30–40%
   savings claim, live engine demo. No invented benchmarks.
 - **Pinned brief (user)**: composition from IDEA design 1 (ink console hero,

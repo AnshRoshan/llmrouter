@@ -126,3 +126,38 @@ def test_state_survives_sidecar_restart(tmp_path):
     r2, h2 = boot()
     assert r2.sessions.peek("sid:zombie") is not None
     h2.shutdown()
+
+
+def test_healthz_reports_fleet(sidecar):
+    base, router = sidecar
+    status, obj = call(base, "GET", "/healthz")
+    assert status == 200
+    assert obj["engine"] == "llmrouter"
+    assert obj["version"] == __import__("llmrouter").__version__
+    assert obj["models"] == len(router.prices)
+    assert obj["backends"] == len(router.backends)
+
+
+def test_decide_batch_roundtrip(sidecar):
+    base, router = sidecar
+    status, obj = call(base, body={"requests": [
+        {"messages": [{"role": "user", "content": "hi"}], "workload": "chat",
+         "session_id": "b1"},
+        {"messages": [{"role": "user", "content": "def f(): pass"}],
+         "workload": "code", "session_id": "b2"},
+    ]})
+    assert status == 200
+    assert "decisions" in obj and len(obj["decisions"]) == 2
+    assert obj["decisions"][0]["workload"] == "chat"
+    assert obj["decisions"][1]["workload"] == "code"
+    # batch sessions are pinned server-side, same as single decisions
+    assert router.sessions.peek("sid:b1") is not None
+    assert router.sessions.peek("sid:b2") is not None
+
+
+def test_decide_batch_validation(sidecar):
+    base, _ = sidecar
+    status, obj = call(base, body={"requests": []})
+    assert status == 400 and "non-empty" in obj["error"]
+    status, obj = call(base, body={"requests": [{"messages": "nope"}]})
+    assert status == 400

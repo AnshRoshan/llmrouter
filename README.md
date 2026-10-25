@@ -34,6 +34,13 @@ npx llmrouter serve --port 8787              # same wire format
 
 # local GPU + cloud scored together, with honest $/MTok GPU economics
 python -c "from llmrouter import Router; Router.with_ollama(openai_key='...')"
+
+# the 2026 cache-economics providers, one constructor each
+python -c "from llmrouter import Router; Router.with_deepseek(deepseek_key='...')"
+
+# time-of-day pricing: stamp the decision with the call time and DeepSeek's
+# half-price off-peak windows (01-04 / 06-10 UTC, Mon-Fri) are scored honestly
+python -c "from llmrouter import Router; r = Router.with_deepseek(deepseek_key='k')"
 ```
 
 The Python engine also **streams** (`router.astream`, failover safe before the
@@ -61,7 +68,13 @@ the claim and the niche:
   cache-economics-weighted cross-provider stickiness, per-breakpoint TTL
   choice, or a decide-sidecar posture.
 - **Cache discounts now rival model-price gaps.** DeepSeek bills cache hits
-  ~30x under misses, Gemini's implicit cache is 90% off — a cheaper model with
-  a cold cache can lose to a warm expensive one. The bundled price matrix
-  encodes these (`DEEPSEEK_CACHE`, `GEMINI_CACHE`, `KIMI_CACHE`,
-  `OPENAI_CACHE_WRITE`); cards are opt-in until you register a backend.
+  ~30x under misses and its input at HALF price off-peak (01-04 / 06-10 UTC
+  Mon-Fri), Gemini's implicit cache is 90% off — a cheaper model with a cold
+  cache can lose to a warm expensive one. The bundled matrix encodes this
+  (`DEEPSEEK_CACHE`, `GEMINI_CACHE`, `KIMI_CACHE`, `OPENAI_CACHE_WRITE`) and
+  `Router.with_deepseek()` / `with_gemini()` / `with_kimi()` wire them as
+  OpenAI-compatible backends in one call. Time-of-day pricing is scored when
+  the caller stamps `at_utc` on `decide()` — without the stamp you get
+  deterministic list price, never a silent discount. The `/decide` sidecar
+  also speaks batch (`{"requests": [...]}`) and reports fleet size on
+  `/healthz`.

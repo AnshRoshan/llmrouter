@@ -20,6 +20,7 @@ Two facts that the price registry must encode and most routers get wrong:
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Mapping
 
 from .types import DeploymentClass
@@ -94,6 +95,19 @@ class PriceCard:
     rework_factor: float = 1.0
     """>1 means output often needs correction, multiplying downstream cost."""
 
+    off_peak_input_mult: float = 1.0
+    """Input-price multiplier outside `peak_windows_utc`. DeepSeek bills
+    off-peak at half of peak; 1.0 = no time-of-day pricing. Input-side only —
+    output pricing is not observed to vary by window."""
+
+    peak_windows_utc: tuple[tuple[int, int], ...] = ()
+    """Peak windows in minutes-since-midnight UTC, inclusive start / exclusive
+    end. Outside ALL windows (and outside Mon-Fri when `peak_weekdays_only`)
+    the off-peak multiplier applies. Empty tuple = flat pricing."""
+
+    peak_weekdays_only: bool = True
+    """True: weekends are always off-peak (DeepSeek's schedule)."""
+
     @property
     def task_cost_multiplier(self) -> float:
         """Effective cost per TASK relative to sticker price per token."""
@@ -102,18 +116,42 @@ class PriceCard:
     def quality(self, workload: str) -> float:
         return float(self.quality_prior.get(workload, 0.5))
 
+    # ---- time of day ----------------------------------------------------- #
+    def is_peak(self, at_utc: datetime) -> bool:
+        """True when `at_utc` (must be UTC) falls inside a peak window."""
+        if not self.peak_windows_utc:
+            return False
+        if self.peak_weekdays_only and at_utc.weekday() >= 5:
+            return False
+        minute_of_day = at_utc.hour * 60 + at_utc.minute
+        return any(start <= minute_of_day < end
+                   for start, end in self.peak_windows_utc)
+
+    def input_multiplier(self, at_utc: datetime | None = None) -> float:
+        """Input-price multiplier at `at_utc`. `None` means "unknown / make it
+        deterministic": callers who do not opt into time-of-day pricing get
+        list price, never a silent discount."""
+        if at_utc is None or not self.peak_windows_utc or self.is_peak(at_utc):
+            return 1.0
+        return self.off_peak_input_mult
+
     # ---- money ---------------------------------------------------------- #
-    def input_cost(self, tokens: int) -> float:
-        return tokens / 1_000_000 * self.input_per_mtok
+    def effective_input_per_mtok(self, at_utc: datetime | None = None) -> float:
+        return self.input_per_mtok * self.input_multiplier(at_utc)
+
+    def input_cost(self, tokens: int, at_utc: datetime | None = None) -> float:
+        return tokens / 1_000_000 * self.effective_input_per_mtok(at_utc)
 
     def output_cost(self, tokens: int) -> float:
         return tokens / 1_000_000 * self.output_per_mtok
 
-    def cache_read_cost(self, tokens: int) -> float:
-        return self.input_cost(tokens) * self.cache.read_mult
+    def cache_read_cost(self, tokens: int,
+                        at_utc: datetime | None = None) -> float:
+        return self.input_cost(tokens, at_utc) * self.cache.read_mult
 
-    def cache_write_cost(self, tokens: int, ttl: str = "5m") -> float:
-        return self.input_cost(tokens) * self.cache.write_mult(ttl)
+    def cache_write_cost(self, tokens: int, ttl: str = "5m",
+                         at_utc: datetime | None = None) -> float:
+        return self.input_cost(tokens, at_utc) * self.cache.write_mult(ttl)
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +216,13 @@ DEEPSEEK_CACHE = CacheSemantics(
     invalidating_fields=frozenset({"model"}),
     explicit_cache_key_param=None,
 )
+
+# DeepSeek peak/off-peak billing: off-peak input is HALF of peak. Windows are
+# 01:00-04:00 and 06:00-10:00 UTC, Mon-Fri (from the research dossier — verify
+# against current docs before trusting); everything else, including all of
+# Saturday and Sunday, is off-peak. Encoded in minutes-since-midnight UTC.
+DEEPSEEK_OFF_PEAK_MULT = 0.5
+DEEPSEEK_PEAK_WINDOWS_UTC = ((60, 240), (360, 600))
 
 # Gemini: implicit caching, 90% off cached tokens (raised from 75%), 2048-token
 # minimum prefix, 5m TTL that refreshes on hit. Explicit caching adds a storage
@@ -276,6 +321,8 @@ def default_price_cards() -> dict[str, PriceCard]:
         "deepseek-class": PriceCard(
             "deepseek-class", 0.30, 1.20, DEEPSEEK_CACHE,
             quality_prior=weak, p50_latency_ms=900, context_window=128_000,
+            off_peak_input_mult=DEEPSEEK_OFF_PEAK_MULT,
+            peak_windows_utc=DEEPSEEK_PEAK_WINDOWS_UTC,
         ),
         "gemini-class": PriceCard(
             "gemini-class", 1.50, 7.50, GEMINI_CACHE,
@@ -348,6 +395,8 @@ __all__ = [
     "OPENAI_CACHE_CURRENT",
     "OPENAI_CACHE_WRITE",
     "DEEPSEEK_CACHE",
+    "DEEPSEEK_OFF_PEAK_MULT",
+    "DEEPSEEK_PEAK_WINDOWS_UTC",
     "GEMINI_CACHE",
     "KIMI_CACHE",
     "SELF_HOSTED_CACHE",

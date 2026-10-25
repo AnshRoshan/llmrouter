@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
@@ -171,7 +172,8 @@ class PolicyEngine:
         return max(est, self.estimate_prefix_tokens(req))
 
     def estimate_turn_cost(self, card: PriceCard, prefix_tokens: int,
-                           hit_rate: float, output_tokens: int = 500) -> float:
+                           hit_rate: float, output_tokens: int = 500,
+                           at_utc: datetime | None = None) -> float:
         """Expected $ for one turn, modelling the cache honestly.
 
         Scaled by `card.task_cost_multiplier`: sticker price per token is only
@@ -182,8 +184,8 @@ class PolicyEngine:
         cached = int(prefix_tokens * hit_rate)
         uncached = prefix_tokens - cached
         sticker = (
-            card.cache_read_cost(cached)
-            + card.input_cost(uncached)
+            card.cache_read_cost(cached, at_utc)
+            + card.input_cost(uncached, at_utc)
             + card.output_cost(output_tokens)
         )
         return sticker * card.task_cost_multiplier
@@ -196,6 +198,7 @@ class PolicyEngine:
         req: RoutingRequest,
         session: SessionPolicy | None = None,
         now: float | None = None,
+        at_utc: datetime | None = None,
     ) -> Decision:
         now = now if now is not None else time.monotonic()
         reasons: list[str] = []
@@ -282,7 +285,7 @@ class PolicyEngine:
                 if rule_f_invalidated:
                     hit_rate = 0.0
 
-                turn_cost = self.estimate_turn_cost(card, prefix_tokens, hit_rate)
+                turn_cost = self.estimate_turn_cost(card, prefix_tokens, hit_rate, at_utc=at_utc)
                 cost = turn_cost * backend.cost_factor * self._pair_multiplier(card)
 
                 latency = self._latency(card, backend)

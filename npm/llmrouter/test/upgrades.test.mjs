@@ -6,6 +6,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { VERSION } from "../dist/version.js";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -237,7 +238,12 @@ async function withServer(options, fn) {
 test("sidecar: healthz, decide, 400 and 404", async () => {
   await withServer({}, async (base) => {
     const h = await fetch(`${base}/healthz`);
-    assert.deepEqual(await h.json(), { ok: true, engine: "llmrouter" });
+    const hz = await h.json();
+    assert.equal(hz.ok, true);
+    assert.equal(hz.engine, "llmrouter");
+    assert.equal(hz.version, VERSION);
+    assert.equal(hz.models, 9);
+    assert.equal(hz.backends, 2);
 
     const d = await fetch(`${base}/decide`, {
       method: "POST",

@@ -486,7 +486,7 @@ both packages side by side.
 
 ```bash
 pip install -e ".[dev]"
-pytest            # 241 tests
+pytest            # 252 tests
 ```
 
 ## Caveats
@@ -509,17 +509,28 @@ pytest            # 241 tests
 The bundled cards now encode the cache-economics leaders — DeepSeek (cache
 hits ~30× under misses), Gemini (90% off implicit cache, 2,048-token floor),
 Kimi (~80% off) — plus an `OPENAI_CACHE_WRITE` semantic for GPT-5.6-era
-three-bucket billing. These cards ship **without** default backends, so
-registering one is the opt-in:
+three-bucket billing. DeepSeek's card also carries **peak/off-peak billing**:
+half-price input outside 01:00-04:00 and 06:00-10:00 UTC Mon-Fri. The
+multiplier only applies when the caller stamps `at_utc` on `decide()` —
+without it you get list price, never a silent discount:
 
 ```python
-from llmrouter import BackendSpec, Router
+from datetime import datetime, timezone
+router.decide(req, at_utc=datetime.now(timezone.utc))
+```
 
-router = Router.pure()
-router.backends.register(BackendSpec(
-    "deepseek", base_url="https://api.deepseek.com/v1",
-    models=("deepseek-class",), priority=2,
-))
+One-constructor wiring (all three speak the OpenAI wire format; Gemini via
+Google's compatibility layer):
+
+```python
+from llmrouter import Router
+
+router = Router.with_deepseek(deepseek_key="sk-...",
+                              openai_key="sk-...")   # any mix of keys
+# or wire the backend yourself for a decision-only router:
+#   Router.pure().backends.register(BackendSpec(
+#       "deepseek", base_url="https://api.deepseek.com/v1",
+#       models=("deepseek-class",), priority=2))
 ```
 
 ## License

@@ -7,6 +7,7 @@ itself. This is the integration surface that lets the engine ride alongside
 production gateways instead of replacing them.
 
     POST /decide   {RoutingRequest payload}          -> {Decision payload}
+                   {"requests": [payload, ...]}      -> {"decisions": [...]}
     GET  /stats    routing/session/backend telemetry -> {...}
     GET  /healthz  liveness for load balancers       -> {"ok": true}
 
@@ -29,11 +30,13 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Mapping
 
+from . import __version__
 from .learning import QualityModel
 from .router import Router
 from .types import RoutingRequest
 
 MAX_BODY_BYTES = 10 * 1024 * 1024
+MAX_BATCH = 256
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -64,7 +67,13 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return self._send(401, {"error": "unauthorized"})
         if self.path == "/healthz":
-            return self._send(200, {"ok": True, "engine": "llmrouter"})
+            return self._send(200, {
+                "ok": True,
+                "engine": "llmrouter",
+                "version": __version__,
+                "models": len(self.server.router.prices),
+                "backends": len(self.server.router.backends),
+            })
         if self.path == "/stats":
             return self._send(200, self.server.router.stats())
         return self._send(404, {"error": "not found"})
@@ -84,9 +93,19 @@ class _Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError) as exc:
             return self._send(400, {"error": f"invalid JSON: {exc}"})
 
+        # Batch form: {"requests": [RoutingRequest, ...]} -> {"decisions":
+        # [Decision, ...]}. One round-trip for gateways scoring a fan-out
+        # (retry probes, A/B shards, the eval harness). Single-request form
+        # is unchanged, so existing gateway clients keep working.
+        if "requests" in payload:
+            return self._decide_batch(payload)
+
+        return self._decide_one(payload)
+
+    def _decide_one(self, payload: Mapping[str, Any]) -> None:
         try:
             req = RoutingRequest.from_payload(payload)
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
             return self._send(400, {"error": str(exc)})
 
         try:
@@ -112,6 +131,31 @@ class _Handler(BaseHTTPRequestHandler):
         except RuntimeError as exc:  # every candidate filtered out
             return self._send(422, {"error": str(exc)})
         return self._send(200, decision.to_payload())
+
+    def _decide_batch(self, payload: Mapping[str, Any]) -> None:
+        requests = payload.get("requests")
+        if not isinstance(requests, list) or not requests:
+            return self._send(400, {"error": '"requests" must be a non-empty array'})
+        if len(requests) > MAX_BATCH:
+            return self._send(400, {"error": f"batch is limited to {MAX_BATCH} requests"})
+        decisions: list[Mapping[str, Any]] = []
+        try:
+            with self.server.lock:
+                for item in requests:
+                    if not isinstance(item, dict):
+                        return self._send(400, {"error": "batch items must be JSON objects"})
+                    try:
+                        req = RoutingRequest.from_payload(item)
+                    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                        return self._send(400, {"error": str(exc)})
+                    decision = self.server.router.decide(req)
+                    self.server.router.note_decision(req, decision)
+                    decisions.append(decision.to_payload())
+        except RuntimeError as exc:
+            # All-or-nothing: a batch is one scoring pass for the caller's
+            # fan-out, so a dead fleet fails the batch rather than half-filling.
+            return self._send(422, {"error": str(exc)})
+        return self._send(200, {"decisions": decisions})
 
 
 class _Sidecar(ThreadingHTTPServer):
@@ -179,4 +223,4 @@ def main(argv: list[str] | None = None) -> int:
     return cmd_serve(args)
 
 
-__all__ = ["build_router", "create_server", "cmd_serve", "MAX_BODY_BYTES"]
+__all__ = ["build_router", "create_server", "cmd_serve", "MAX_BODY_BYTES", "MAX_BATCH"]

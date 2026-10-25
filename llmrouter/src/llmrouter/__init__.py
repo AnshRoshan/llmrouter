@@ -114,6 +114,8 @@ from .policy import PolicyEngine, RouterConfig, Weights
 from .pricing import (
     ANTHROPIC_CACHE,
     DEEPSEEK_CACHE,
+    DEEPSEEK_OFF_PEAK_MULT,
+    DEEPSEEK_PEAK_WINDOWS_UTC,
     GEMINI_CACHE,
     KIMI_CACHE,
     OPENAI_CACHE_CURRENT,
@@ -176,6 +178,8 @@ __all__ = [
     "OPENAI_CACHE_CURRENT",
     "OPENAI_CACHE_WRITE",
     "DEEPSEEK_CACHE",
+    "DEEPSEEK_OFF_PEAK_MULT",
+    "DEEPSEEK_PEAK_WINDOWS_UTC",
     "GEMINI_CACHE",
     "KIMI_CACHE",
     "SELF_HOSTED_CACHE",

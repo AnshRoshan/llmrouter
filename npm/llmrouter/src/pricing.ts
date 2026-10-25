@@ -53,6 +53,12 @@ export class PriceCard {
     /** Price-per-task factors (Cognition's Fusion finding). */
     public readonly tokenEfficiency: number = 1.0,
     public readonly reworkFactor: number = 1.0,
+    /** Input-price multiplier outside peakWindowsUtc (DeepSeek: 0.5). */
+    public readonly offPeakInputMult: number = 1.0,
+    /** Peak windows in minutes-since-midnight UTC, [start, end). */
+    public readonly peakWindowsUtc: readonly (readonly [number, number])[] = [],
+    /** True: weekends are always off-peak (DeepSeek's schedule). */
+    public readonly peakWeekdaysOnly: boolean = true,
   ) {}
 
   /** Effective cost per TASK relative to sticker price per token. */
@@ -64,20 +70,43 @@ export class PriceCard {
     return this.qualityPrior[workload] ?? 0.5;
   }
 
-  inputCost(tokens: number): number {
-    return (tokens / 1_000_000) * this.inputPerMtok;
+  /** True when atUtc (must be UTC) falls inside a peak window. */
+  isPeak(atUtc: Date): boolean {
+    if (this.peakWindowsUtc.length === 0) return false;
+    if (this.peakWeekdaysOnly && (atUtc.getUTCDay() === 0 || atUtc.getUTCDay() === 6)) {
+      return false;
+    }
+    const minuteOfDay = atUtc.getUTCHours() * 60 + atUtc.getUTCMinutes();
+    return this.peakWindowsUtc.some(([start, end]) => start <= minuteOfDay && minuteOfDay < end);
+  }
+
+  /** Input-price multiplier at atUtc. null means "deterministic": callers
+   *  who do not opt into time-of-day pricing get list price. */
+  inputMultiplier(atUtc: Date | null = null): number {
+    if (atUtc === null || this.peakWindowsUtc.length === 0 || this.isPeak(atUtc)) {
+      return 1.0;
+    }
+    return this.offPeakInputMult;
+  }
+
+  effectiveInputPerMtok(atUtc: Date | null = null): number {
+    return this.inputPerMtok * this.inputMultiplier(atUtc);
+  }
+
+  inputCost(tokens: number, atUtc: Date | null = null): number {
+    return (tokens / 1_000_000) * this.effectiveInputPerMtok(atUtc);
   }
 
   outputCost(tokens: number): number {
     return (tokens / 1_000_000) * this.outputPerMtok;
   }
 
-  cacheReadCost(tokens: number): number {
-    return this.inputCost(tokens) * this.cache.readMult;
+  cacheReadCost(tokens: number, atUtc: Date | null = null): number {
+    return this.inputCost(tokens, atUtc) * this.cache.readMult;
   }
 
-  cacheWriteCost(tokens: number, ttl: string = "5m"): number {
-    return this.inputCost(tokens) * this.cache.writeMult(ttl);
+  cacheWriteCost(tokens: number, ttl: string = "5m", atUtc: Date | null = null): number {
+    return this.inputCost(tokens, atUtc) * this.cache.writeMult(ttl);
   }
 }
 
@@ -105,6 +134,13 @@ export const OPENAI_CACHE_WRITE = new CacheSemantics(
 export const DEEPSEEK_CACHE = new CacheSemantics(
   1 / 30, 1.0, 1.0, 64, ["5m"], true, false, 0, null,
 );
+// DeepSeek peak/off-peak billing: off-peak input is HALF of peak. Windows are
+// 01:00-04:00 and 06:00-10:00 UTC, Mon-Fri; everything else (including all of
+// Saturday and Sunday) is off-peak. Minutes-since-midnight UTC.
+export const DEEPSEEK_OFF_PEAK_MULT = 0.5;
+export const DEEPSEEK_PEAK_WINDOWS_UTC: readonly (readonly [number, number])[] = [
+  [60, 240], [360, 600],
+];
 // Gemini: implicit caching 90% off, 2048-token minimum prefix, 5m TTL.
 export const GEMINI_CACHE = new CacheSemantics(
   0.10, 1.0, 1.0, 2048, ["5m"], true, false, 0, null,
@@ -139,7 +175,8 @@ export function defaultPriceCards(): Map<string, PriceCard> {
     // into the default backends (which serve only the claude*/gpt* prefixes) —
     // they become candidates the moment you register a backend for them.
     new PriceCard("deepseek-class", 0.30, 1.20, DEEPSEEK_CACHE, 128_000, true, false,
-      DeploymentClass.Api, new Set(), weak, 900),
+      DeploymentClass.Api, new Set(), weak, 900, 1.0, 1.0,
+      DEEPSEEK_OFF_PEAK_MULT, DEEPSEEK_PEAK_WINDOWS_UTC, true),
     new PriceCard("gemini-class", 1.50, 7.50, GEMINI_CACHE, 1_000_000, true, true,
       DeploymentClass.Api, new Set(), mid, 700),
     new PriceCard("kimi-class", 0.75, 3.50, KIMI_CACHE, 256_000, true, false,

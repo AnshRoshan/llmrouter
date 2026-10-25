@@ -78,9 +78,12 @@ pre-merge gate for routing changes.
 The bundled price cards encode the cache-economics leaders: DeepSeek (cache
 hits ~30× under misses, `DEEPSEEK_CACHE`), Gemini (90% off implicit cache with
 a 2,048-token floor, `GEMINI_CACHE`), Kimi (~80% off, `KIMI_CACHE`), and an
-`OPENAI_CACHE_WRITE` semantic for GPT-5.6-era three-bucket billing. These
-cards ship without default backends, so they become candidates only when you
-register one — adding them changes no decision by itself. See
+`OPENAI_CACHE_WRITE` semantic for GPT-5.6-era three-bucket billing. DeepSeek's
+card also carries **peak/off-peak billing** (half-price input outside 01-04 /
+06-10 UTC Mon-Fri) that applies only when you stamp `at_utc` on `decide()` —
+without it you get list price, never a silent discount. These cards ship
+without default backends, so they become candidates only when you register
+one — adding them changes no decision by itself. See
 `../../research/11-market-landscape-2026.md` for the verified multipliers.
 
 ## Not in the JS port (yet)

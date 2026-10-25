@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime
 from collections import deque
 from dataclasses import dataclass, replace
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Sequence
@@ -245,6 +246,9 @@ class Router:
         *,
         anthropic_key: str | None = None,
         openai_key: str | None = None,
+        deepseek_key: str | None = None,
+        gemini_key: str | None = None,
+        kimi_key: str | None = None,
         profiles: Mapping[str, AgentProfile] | None = None,
         classifier: WorkloadClassifier | None = None,
         default_workload: WorkloadClass = WorkloadClass.CHAT,
@@ -259,18 +263,25 @@ class Router:
         state_store: FileStateStore | None = None,
     ) -> "Router":
         """Sensible starting point: the bundled price cards plus one backend per
-        provider you supplied a key for.
+        provider you supplied a key for. The 2026 cache-economics providers are
+        first-class: `deepseek_key` / `gemini_key` / `kimi_key` wire OpenAI-
+        compatible backends against their bundled cards (DeepSeek's off-peak
+        billing is time-aware when the executor stamps `at_utc`).
 
         Register your own backends for self-hosted/serverless deployments — the
         bundled defaults are API-only, because deployment class is the axis you
         know and we do not.
         """
         prices = PriceRegistry()
-        backends: list[BackendSpec] = cls._cloud_backends(prices, anthropic_key, openai_key)
+        backends: list[BackendSpec] = cls._cloud_backends(
+            prices, anthropic_key, openai_key,
+            deepseek_key=deepseek_key, gemini_key=gemini_key,
+            kimi_key=kimi_key)
         backends.extend(extra_backends)
         if not backends:
             raise ValueError(
-                "no backends configured — pass anthropic_key/openai_key or extra_backends"
+                "no backends configured — pass anthropic_key/openai_key/"
+                "deepseek_key/gemini_key/kimi_key or extra_backends"
             )
 
         router = cls(
@@ -290,13 +301,19 @@ class Router:
             quality_model=quality_model,
             state_store=state_store,
         )
-        router._keys = {"anthropic": anthropic_key, "openai": openai_key}  # type: ignore[attr-defined]
+        router._keys = {"anthropic": anthropic_key, "openai": openai_key,
+                        "deepseek": deepseek_key, "gemini": gemini_key,
+                        "kimi": kimi_key}  # type: ignore[attr-defined]
         return router
 
     @staticmethod
     def _cloud_backends(prices: PriceRegistry,
                         anthropic_key: str | None,
-                        openai_key: str | None) -> list[BackendSpec]:
+                        openai_key: str | None,
+                        *,
+                        deepseek_key: str | None = None,
+                        gemini_key: str | None = None,
+                        kimi_key: str | None = None) -> list[BackendSpec]:
         out: list[BackendSpec] = []
         if anthropic_key:
             out.append(BackendSpec(
@@ -314,7 +331,52 @@ class Router:
                 base_url="https://api.openai.com",
                 priority=1,
             ))
+        # The 2026 cache-economics providers, all OpenAI-compatible (Gemini via
+        # Google's OpenAI-compatibility layer), so the OpenAI adapter serves
+        # them unchanged. Priority keeps them behind the incumbent clouds.
+        compat = (
+            ("deepseek", "deepseek", deepseek_key,
+             "https://api.deepseek.com/v1", 2),
+            ("gemini", "gemini", gemini_key,
+             "https://generativelanguage.googleapis.com/v1beta/openai", 3),
+            ("kimi", "kimi", kimi_key,
+             "https://api.moonshot.ai/v1", 4),
+        )
+        for prefix, backend_id, key, base_url, priority in compat:
+            if key:
+                out.append(BackendSpec(
+                    backend_id=backend_id,
+                    deployment=DeploymentClass.API,
+                    models=tuple(m for m in prices.ids()
+                                 if m.startswith(prefix)),
+                    base_url=base_url,
+                    priority=priority,
+                ))
         return out
+
+    @classmethod
+    def with_deepseek(cls, *, deepseek_key: str | None = None,
+                      **kwargs: Any) -> "Router":
+        """Cache-economics fleet with DeepSeek wired: the cheapest cache-hit
+        tier in the matrix (~30x under miss), with half-price off-peak input
+        (01:00-04:00 / 06:00-10:00 UTC Mon-Fri windows; stamp `at_utc` on
+        `decide()` or pay list price)."""
+        return cls.with_defaults(deepseek_key=deepseek_key, **kwargs)
+
+    @classmethod
+    def with_gemini(cls, *, gemini_key: str | None = None,
+                    **kwargs: Any) -> "Router":
+        """Cache-economics fleet with Gemini wired via Google's
+        OpenAI-compatibility layer (90% off implicit cache, 2,048-token
+        floor)."""
+        return cls.with_defaults(gemini_key=gemini_key, **kwargs)
+
+    @classmethod
+    def with_kimi(cls, *, kimi_key: str | None = None,
+                  **kwargs: Any) -> "Router":
+        """Cache-economics fleet with Kimi (Moonshot) wired via their
+        OpenAI-compatible endpoint (billed cache-hit tier ~80% off list)."""
+        return cls.with_defaults(kimi_key=kimi_key, **kwargs)
 
     @classmethod
     def with_ollama(
@@ -391,27 +453,30 @@ class Router:
             quality_model=quality_model,
             state_store=state_store,
         )
-        router._keys = {"anthropic": anthropic_key, "openai": openai_key}  # type: ignore[attr-defined]
+        router._keys = {"anthropic": anthropic_key, "openai": openai_key,
+                        "deepseek": None, "gemini": None, "kimi": None}  # type: ignore[attr-defined]
         return router
 
     # ------------------------------------------------------------------ #
     # DECISION (pure, no I/O)
     # ------------------------------------------------------------------ #
-    def decide(self, req: RoutingRequest) -> Decision:
+    def decide(self, req: RoutingRequest,
+               at_utc: datetime | None = None) -> Decision:
         """Pick a (model, backend) pair without calling anything.
 
         Safe to call in a hot path: no network, no I/O. Use it to inspect routing
         behaviour, or to drive your own HTTP client.
         """
         session = self.sessions.get(req.sticky_key())
-        decision = self.engine_decide(req, session)
+        decision = self.engine_decide(req, session, at_utc=at_utc)
         self._last_decision = decision
         self._last_user_text = req.first_user_text()
         return decision
 
     def engine_decide(self, req: RoutingRequest,
-                      session: SessionPolicy | None) -> Decision:
-        return self.engine.decide(req, session=session)
+                      session: SessionPolicy | None,
+                      at_utc: datetime | None = None) -> Decision:
+        return self.engine.decide(req, session=session, at_utc=at_utc)
 
     def explain(self, last: bool = True) -> str:
         if last and self._last_decision is not None:
