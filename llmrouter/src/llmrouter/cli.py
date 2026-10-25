@@ -30,6 +30,7 @@ from typing import Any, Mapping, Sequence
 
 from .learning import QualityModel, load_feedback, train_heads
 from .policy import PolicyEngine, RouterConfig, Weights
+from . import __version__
 from .router import Router
 from .types import Message, RoutingRequest, WorkloadClass
 
@@ -354,6 +355,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Cache-aware LLM routing — decision-layer CLI "
                     "(no network, no keys)",
     )
+    parser.add_argument("--version", action="version",
+                        version=f"llmrouter {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("explain", help="route one prompt and explain it")

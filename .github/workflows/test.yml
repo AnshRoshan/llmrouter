@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e "llmrouter[dev]"
+      - run: pytest
+        working-directory: llmrouter
+
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ["20", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --no-audit --no-fund
+        working-directory: npm/llmrouter
+      - run: npm test
+        working-directory: npm/llmrouter
+
+  parity:
+    runs-on: ubuntu-latest
+    needs: [python, node]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pip install -e "llmrouter[dev]"
+      - run: pytest
+        working-directory: llmrouter
+      - run: npm install --no-audit --no-fund
+        working-directory: npm/llmrouter
+      - name: cross-runtime parity
+        run: |
+          cd llmrouter && python scripts/parity_bundle.py
+          cd ../../npm/llmrouter && node scripts/parity.mjs && node scripts/parity.mjs

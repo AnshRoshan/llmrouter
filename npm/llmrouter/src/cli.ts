@@ -3,6 +3,7 @@
  * no keys, no network. Mirrors `python -m llmrouter`. `serve` delegates to
  * the decide-sidecar (see serve.ts).
  */
+import { VERSION } from "./version.js";
 import { readFileSync } from "node:fs";
 import { PolicyEngine, type RouterConfig, type Weights } from "./policy.js";
 import { BackendRegistry, BackendSpec } from "./backends.js";
@@ -262,6 +263,10 @@ export function runCli(argv: string[]): number {
     }
   }
   try {
+    if (command === "version" || command === "--version" || flags.has("version")) {
+      console.log(`llmrouter ${VERSION}`);
+      return 0;
+    }
     switch (command) {
       case "explain":
         if (!args.has("prompt")) {
@@ -286,7 +291,7 @@ export function runCli(argv: string[]): number {
       default:
         console.error(
           "llmrouter — cache-aware LLM routing (decision engine)\n" +
-            "usage: llmrouter <explain|eval|calibrate|serve> [options]",
+            "usage: llmrouter <explain|eval|calibrate|serve|version> [options]",
         );
         return command ? 2 : 0;
     }
