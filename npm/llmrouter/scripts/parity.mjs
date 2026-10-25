@@ -12,6 +12,7 @@
  * shrinkage blend and the float64 dot product must match byte-for-byte.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   Message,
   RoutingRequest,
@@ -25,7 +26,8 @@ import {
   QualityModel,
 } from "../dist/index.js";
 
-const dir = "D:/WORKK/LLM_ROUTER/.tmp_parity";
+// Repo root, resolved from this file — works on any checkout.
+const dir = fileURLToPath(new URL("../../../.tmp_parity/", import.meta.url)).replace(/\$/, "");
 const bundlePath = `${dir}/cases.json`;
 if (!existsSync(bundlePath)) {
   console.error(`missing ${bundlePath} — generate the parity bundle from Python first`);
