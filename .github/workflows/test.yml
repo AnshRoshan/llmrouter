@@ -51,6 +51,8 @@ jobs:
         working-directory: llmrouter
       - run: npm install --no-audit --no-fund
         working-directory: npm/llmrouter
+      - run: npm run build
+        working-directory: npm/llmrouter
       - name: cross-runtime parity
         run: |
           cd llmrouter && python scripts/parity_bundle.py
