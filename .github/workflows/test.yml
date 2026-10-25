@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e "llmrouter[dev]"
-      - run: pytest
+      - run: python -m pytest
         working-directory: llmrouter
 
   node:
@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: 24
       - run: pip install -e "llmrouter[dev]"
-      - run: pytest
+      - run: python -m pytest
         working-directory: llmrouter
       - run: npm install --no-audit --no-fund
         working-directory: npm/llmrouter
