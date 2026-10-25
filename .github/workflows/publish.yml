@@ -1,9 +1,16 @@
 name: publish
 
 # Publish both packages when a version tag is pushed: `git tag v0.6.0 && git push --tags`.
-# Requires two repository secrets:
-#   NPM_TOKEN        — an npm automation token (npm/llmrouter package)
-#   PYPI_API_TOKEN   — a PyPI API token for the `llmrouter` project
+#
+# Auth: trusted publishing (OIDC) on both registries — no long-lived secrets.
+# One-time setup:
+#   PyPI  — pypi.org -> llmrouter project (or pending publisher) -> add a
+#           Trusted Publisher: owner AnshRoshan, repo llmrouter, workflow
+#           publish.yml, environment release.
+#   npm   — npmjs.com -> package llmrouter -> Settings -> Trusted Publishing:
+#           same repository/workflow; needs the package to exist (first
+#           publish can be done manually with `npm login && npm publish`,
+#           or add an NPM_TOKEN secret and restore the env line below).
 # The full test + parity suite runs as the gate; a failure blocks publishing.
 
 on:
@@ -19,7 +26,7 @@ jobs:
     needs: test
     environment: release
     permissions:
-      id-token: write  # PyPI trusted publishing (no token needed if configured)
+      id-token: write  # PyPI trusted publishing
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,13 +39,16 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: llmrouter/dist
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          # OIDC trusted publishing; to use a token instead, uncomment:
+          # password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   publish-npm:
     runs-on: ubuntu-latest
     needs: test
     environment: release
+    permissions:
+      id-token: write  # npm trusted publishing (provenance + OIDC)
     defaults:
       run:
         working-directory: npm/llmrouter
@@ -50,6 +60,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --provenance --access public
+        # OIDC trusted publishing; if you prefer a token, uncomment:
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

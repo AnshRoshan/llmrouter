@@ -27,7 +27,7 @@ import {
 } from "../dist/index.js";
 
 // Repo root, resolved from this file — works on any checkout.
-const dir = fileURLToPath(new URL("../../../.tmp_parity/", import.meta.url)).replace(/\$/, "");
+const dir = fileURLToPath(new URL("../../../.tmp_parity/", import.meta.url)).replace(/\/$/, "");
 const bundlePath = `${dir}/cases.json`;
 if (!existsSync(bundlePath)) {
   console.error(`missing ${bundlePath} — generate the parity bundle from Python first`);
