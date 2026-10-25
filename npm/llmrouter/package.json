@@ -21,7 +21,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -47,8 +47,8 @@
   },
   "author": "llmrouter contributors",
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
-    "typescript": "^5.5.0"
+    "typescript": "^7.0.2"
   }
 }
