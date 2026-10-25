@@ -54,4 +54,4 @@ jobs:
       - name: cross-runtime parity
         run: |
           cd llmrouter && python scripts/parity_bundle.py
-          cd ../../npm/llmrouter && node scripts/parity.mjs && node scripts/parity.mjs
+          cd ../npm/llmrouter && node scripts/parity.mjs && node scripts/parity.mjs
