@@ -143,7 +143,7 @@ test("min-quality floor excludes weak models", () => {
 
 test("empty registry means empty, not defaults (falsy-trap)", () => {
   assert.equal(new PriceRegistry(new Map()).size, 0);
-  assert.equal(new PriceRegistry().size, 6);
+  assert.equal(new PriceRegistry().size, 9);
 });
 
 test("Rule F: tool-schema drift scores everything cold", () => {

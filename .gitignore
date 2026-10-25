@@ -17,3 +17,6 @@ website/_demo_crop.png
 # design tooling scratch
 .impeccable/
 IDEA/
+
+# graphify knowledge-graph artifacts (local project context)
+graphify-out/

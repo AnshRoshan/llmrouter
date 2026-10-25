@@ -11,6 +11,11 @@ Two facts that the price registry must encode and most routers get wrong:
 2. Anthropic charges a cache **write** premium (1.25× for 5m, 2.0× for 1h);
    OpenAI pre-GPT-5.6 charges **no write premium at all**. This single field is
    what decides whether a mid-session model switch is cheap or expensive.
+3. (2026-10 landscape check) The **cache discount can dwarf the model-price
+   gap**: DeepSeek bills cache hits ~30× under misses, Gemini's implicit cache
+   is 90% off, Kimi ~80% off. A 5×-cheaper model with a cold cache can lose to
+   a warm-cache expensive one — which is exactly the trade this package
+   prices. See `research/11-market-landscape-2026.md`.
 """
 from __future__ import annotations
 
@@ -150,6 +155,63 @@ OPENAI_CACHE_LEGACY = CacheSemantics(
 # Current OpenAI (GPT-5.x): 90% discount, still no write premium pre-5.6.
 OPENAI_CACHE_CURRENT = replace(OPENAI_CACHE_LEGACY, read_mult=0.10)
 
+# GPT-5.6-era OpenAI: explicit cache-write pricing (three billing buckets:
+# input / cache-read / cache-write), so a write premium now exists where
+# legacy models had none. The 1.25× magnitude below is a PLACEHOLDER — the
+# bucket exists but the exact multiplier was not verifiable from primary
+# docs at write time; override it with the number on your invoice.
+OPENAI_CACHE_WRITE = replace(OPENAI_CACHE_CURRENT, write_mult_5m=1.25)
+
+# DeepSeek: automatic context caching, hit tokens ~30x cheaper than misses
+# (read_mult ≈ 1/30), no write premium, caches form from 64-token prefixes.
+# Their SGLang cache-aware load balancing is the canonical self-hosted
+# analogue of this package's affinity layer.
+DEEPSEEK_CACHE = CacheSemantics(
+    read_mult=1 / 30,
+    write_mult_5m=1.00,
+    write_mult_1h=1.00,
+    min_cacheable_tokens=64,
+    ttl_options=("5m",),
+    ttl_refreshes_on_hit=True,
+    supports_mixed_ttl=False,
+    max_breakpoints=0,
+    invalidating_fields=frozenset({"model"}),
+    explicit_cache_key_param=None,
+)
+
+# Gemini: implicit caching, 90% off cached tokens (raised from 75%), 2048-token
+# minimum prefix, 5m TTL that refreshes on hit. Explicit caching adds a storage
+# fee and is a different lever — model it via a custom CacheSemantics.
+GEMINI_CACHE = CacheSemantics(
+    read_mult=0.10,
+    write_mult_5m=1.00,
+    write_mult_1h=1.00,
+    min_cacheable_tokens=2048,
+    ttl_options=("5m",),
+    ttl_refreshes_on_hit=True,
+    supports_mixed_ttl=False,
+    max_breakpoints=0,
+    invalidating_fields=frozenset({"model"}),
+    explicit_cache_key_param=None,
+)
+
+# Kimi (Moonshot): billed cache-hit tier around 80% off list. Moonshot's
+# cache pricing is documented inconsistently across models (K3 ~$0.30/M hit
+# on a $3/M input = 0.10; K2.6 $0.15 on $0.75 = 0.20) — this card encodes
+# the 0.20 tier; verify against your invoice before trusting the $.
+KIMI_CACHE = CacheSemantics(
+    read_mult=0.20,
+    write_mult_5m=1.00,
+    write_mult_1h=1.00,
+    min_cacheable_tokens=1024,
+    ttl_options=("5m",),
+    ttl_refreshes_on_hit=True,
+    supports_mixed_ttl=False,
+    max_breakpoints=0,
+    invalidating_fields=frozenset({"model"}),
+    explicit_cache_key_param=None,
+)
+
 # Self-hosted (vLLM APC): compute optimization, not a billed tier. No write
 # premium, and reads are not separately priced — the saving is throughput.
 SELF_HOSTED_CACHE = CacheSemantics(
@@ -205,6 +267,24 @@ def default_price_cards() -> dict[str, PriceCard]:
         "gpt-mini-class": PriceCard(
             "gpt-mini-class", 0.75, 3.0, OPENAI_CACHE_CURRENT,
             quality_prior=weak, p50_latency_ms=450,
+        ),
+        # 2026-10 additions: the cache-economics leaders. These cards are
+        # bundled but NOT wired into the default backends (see Router.pure /
+        # _cloud_backends, which serve only the claude*/gpt* prefixes) — they
+        # become candidates the moment you register a backend for them, so
+        # adding them changes no decision by itself.
+        "deepseek-class": PriceCard(
+            "deepseek-class", 0.30, 1.20, DEEPSEEK_CACHE,
+            quality_prior=weak, p50_latency_ms=900, context_window=128_000,
+        ),
+        "gemini-class": PriceCard(
+            "gemini-class", 1.50, 7.50, GEMINI_CACHE,
+            quality_prior=mid, p50_latency_ms=700, supports_vision=True,
+            context_window=1_000_000,
+        ),
+        "kimi-class": PriceCard(
+            "kimi-class", 0.75, 3.50, KIMI_CACHE,
+            quality_prior=weak, p50_latency_ms=850, context_window=256_000,
         ),
     }
 
@@ -266,5 +346,9 @@ __all__ = [
     "ANTHROPIC_CACHE_SMALL",
     "OPENAI_CACHE_LEGACY",
     "OPENAI_CACHE_CURRENT",
+    "OPENAI_CACHE_WRITE",
+    "DEEPSEEK_CACHE",
+    "GEMINI_CACHE",
+    "KIMI_CACHE",
     "SELF_HOSTED_CACHE",
 ]

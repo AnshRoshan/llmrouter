@@ -21,6 +21,7 @@
 | **`10-fusion-delegation-architecture.md`** | **READ FOURTH.** Cognition Fusion: lead/sidekick **delegation** instead of routing. Validates our KV-cache finding independently, **falsifies the per-token cost model** (a 275% pricier sidekick was 2% cheaper), and says difficulty is unscorable from the prompt. **Promotes sub-agent delegation P1→P0.** |
 | **`verify_08_switch_cost.py`** | Executable check of the §8.3 algebra. 10 checks, all assertions pass. Caught an off-by-one in the doc's worked example. |
 | **`verify_09_ttl_policy.py`** | Executable check of the §9 TTL algebra. 29 checks, 13 assertions, all pass. Caught two modeling errors (same expiry count applied to both tiers; snapshot-only mixed-TTL model). |
+| **`11-market-landscape-2026.md`** | **Oct-2026 landscape refresh.** Competitor re-scan (LiteLLM auto-router, vLLM SAAR/SR, OpenRouter stickiness), refreshed cache-price economics (DeepSeek ~30x hit discount, Gemini 90% implicit, Kimi 0.20 tier, OpenAI write-bucket era), validates the 30-40% claim against LiteLLM's measured 37.4% on real agent traces, and re-ranks the open gaps. Drives the new bundled cache-price matrix. |
 | `summary-table.csv` | Machine-readable version of the master comparative table (21 techniques × 9 fields) |
 
 ## Investigation threads (all completed)

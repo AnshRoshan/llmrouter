@@ -94,6 +94,25 @@ export const OPENAI_CACHE_LEGACY = new CacheSemantics(
 export const OPENAI_CACHE_CURRENT = new CacheSemantics(
   0.10, 1.0, 1.0, 1024, ["5m"], true, false, 0, "prompt_cache_key",
 );
+// GPT-5.6-era OpenAI: explicit cache-write pricing (input / cache-read /
+// cache-write buckets). The 1.25x magnitude is a PLACEHOLDER — override with
+// the number on your invoice.
+export const OPENAI_CACHE_WRITE = new CacheSemantics(
+  0.10, 1.25, 1.25, 1024, ["5m"], true, false, 0, "prompt_cache_key",
+);
+// DeepSeek: hit tokens ~30x cheaper than misses (readMult ~= 1/30), no write
+// premium, caches form from 64-token prefixes.
+export const DEEPSEEK_CACHE = new CacheSemantics(
+  1 / 30, 1.0, 1.0, 64, ["5m"], true, false, 0, null,
+);
+// Gemini: implicit caching 90% off, 2048-token minimum prefix, 5m TTL.
+export const GEMINI_CACHE = new CacheSemantics(
+  0.10, 1.0, 1.0, 2048, ["5m"], true, false, 0, null,
+);
+// Kimi (Moonshot): billed cache-hit tier around 80% off list (0.20 tier).
+export const KIMI_CACHE = new CacheSemantics(
+  0.20, 1.0, 1.0, 1024, ["5m"], true, false, 0, null,
+);
 export const SELF_HOSTED_CACHE = new CacheSemantics(
   1.0, 1.0, 1.0, 512, [], false, false, 0, null,
 );
@@ -116,6 +135,15 @@ export function defaultPriceCards(): Map<string, PriceCard> {
       DeploymentClass.Api, new Set(), mid, 800),
     new PriceCard("gpt-mini-class", 0.75, 3.0, OPENAI_CACHE_CURRENT, 200_000, true, false,
       DeploymentClass.Api, new Set(), weak, 450),
+    // 2026-10 additions: the cache-economics leaders. Bundled but NOT wired
+    // into the default backends (which serve only the claude*/gpt* prefixes) —
+    // they become candidates the moment you register a backend for them.
+    new PriceCard("deepseek-class", 0.30, 1.20, DEEPSEEK_CACHE, 128_000, true, false,
+      DeploymentClass.Api, new Set(), weak, 900),
+    new PriceCard("gemini-class", 1.50, 7.50, GEMINI_CACHE, 1_000_000, true, true,
+      DeploymentClass.Api, new Set(), mid, 700),
+    new PriceCard("kimi-class", 0.75, 3.50, KIMI_CACHE, 256_000, true, false,
+      DeploymentClass.Api, new Set(), weak, 850),
   ];
   return new Map(cards.map((c) => [c.modelId, c]));
 }

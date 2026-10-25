@@ -104,7 +104,7 @@ test("learned-quality decision matches the Python figure exactly", () => {
   const top = d.candidates[0];
   assert.ok(Math.abs(top.quality - 0.818021685514) < 1e-11, String(top.quality));
   assert.ok(
-    d.reasons.some((r) => r.startsWith("learned-quality: 2/6")),
+    d.reasons.some((r) => r.startsWith("learned-quality: 2/9")),
     d.reasons.join(" | "),
   );
   // and without the checkpoint the prior path answers

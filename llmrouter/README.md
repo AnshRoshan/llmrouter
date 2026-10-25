@@ -486,7 +486,7 @@ both packages side by side.
 
 ```bash
 pip install -e ".[dev]"
-pytest            # 170 tests
+pytest            # 241 tests
 ```
 
 ## Caveats
@@ -494,7 +494,8 @@ pytest            # 170 tests
 - **Prices go stale.** The bundled `$/token` figures are illustrative starting
   points — override them with your contracted rates. The *cache multipliers*
   (1.25× / 2.0× / 0.1×, and OpenAI's no-write-premium) were verified against
-  primary docs on 2026-09-12.
+  primary docs on 2026-09-12, re-checked 2026-10-25
+  (see `../research/11-market-landscape-2026.md`).
 - **Quality priors are placeholders.** Calibrate them on your own traffic; the
   bundled numbers are not benchmarks.
 - **The session store is in-process.** For multi-process deployments, back it
@@ -502,6 +503,24 @@ pytest            # 170 tests
 - **TTLs do not translate across providers.** A `cache_control` ttl is dropped
   toward OpenAI, which has its own `prompt_cache_options`. The TTL decision is
   backend-specific.
+
+### The 2026 cache-price matrix
+
+The bundled cards now encode the cache-economics leaders — DeepSeek (cache
+hits ~30× under misses), Gemini (90% off implicit cache, 2,048-token floor),
+Kimi (~80% off) — plus an `OPENAI_CACHE_WRITE` semantic for GPT-5.6-era
+three-bucket billing. These cards ship **without** default backends, so
+registering one is the opt-in:
+
+```python
+from llmrouter import BackendSpec, Router
+
+router = Router.pure()
+router.backends.register(BackendSpec(
+    "deepseek", base_url="https://api.deepseek.com/v1",
+    models=("deepseek-class",), priority=2,
+))
+```
 
 ## License
 

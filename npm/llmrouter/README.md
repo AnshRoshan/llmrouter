@@ -73,6 +73,16 @@ npx llmrouter calibrate --data cases.jsonl --target-strong-pct 0.5
 unroutable, `expected_model` disagrees, or decision p50 exceeds 10 ms — the
 pre-merge gate for routing changes.
 
+## The 2026 cache-price matrix
+
+The bundled price cards encode the cache-economics leaders: DeepSeek (cache
+hits ~30× under misses, `DEEPSEEK_CACHE`), Gemini (90% off implicit cache with
+a 2,048-token floor, `GEMINI_CACHE`), Kimi (~80% off, `KIMI_CACHE`), and an
+`OPENAI_CACHE_WRITE` semantic for GPT-5.6-era three-bucket billing. These
+cards ship without default backends, so they become candidates only when you
+register one — adding them changes no decision by itself. See
+`../../research/11-market-landscape-2026.md` for the verified multipliers.
+
 ## Not in the JS port (yet)
 
 Delegation (lead/sidekick briefs), the async execution layer (retries,

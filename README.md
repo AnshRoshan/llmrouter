@@ -43,3 +43,25 @@ rates, circuit health, pair economics) across restarts with
 
 Apache-2.0. The honest savings expectation is 30-40% at no more than 2%
 quality loss; ship the `eval --ci` gate and measure your own traffic.
+
+## Positioning (Oct 2026)
+
+The landscape re-scan (`research/11-market-landscape-2026.md`) validates both
+the claim and the niche:
+
+- **The claim is conservative.** LiteLLM's published auto-router measures
+  **37.4% savings on real agent traces** (95 sessions, 8,174 calls) — the top
+  of our honest 30-40% ladder. Without cache awareness, they measured routing
+  at ~4x a fixed cached model. vLLM's SAAR research independently confirms
+  sticky-but-willing-to-switch as the right design point (78.7% savings at
+  −0.045 quality; naive stickiness costs 3x the quality).
+- **The niche is still open.** Quality routers are stale or stateless
+  (RouteLLM: no commits since 2024; Not Diamond/Martian: no cache economics).
+  Gateways bolt on binary session affinity (off by default). Nobody ships
+  cache-economics-weighted cross-provider stickiness, per-breakpoint TTL
+  choice, or a decide-sidecar posture.
+- **Cache discounts now rival model-price gaps.** DeepSeek bills cache hits
+  ~30x under misses, Gemini's implicit cache is 90% off — a cheaper model with
+  a cold cache can lose to a warm expensive one. The bundled price matrix
+  encodes these (`DEEPSEEK_CACHE`, `GEMINI_CACHE`, `KIMI_CACHE`,
+  `OPENAI_CACHE_WRITE`); cards are opt-in until you register a backend.

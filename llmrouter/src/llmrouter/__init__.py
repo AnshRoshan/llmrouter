@@ -113,8 +113,12 @@ from .local import (
 from .policy import PolicyEngine, RouterConfig, Weights
 from .pricing import (
     ANTHROPIC_CACHE,
+    DEEPSEEK_CACHE,
+    GEMINI_CACHE,
+    KIMI_CACHE,
     OPENAI_CACHE_CURRENT,
     OPENAI_CACHE_LEGACY,
+    OPENAI_CACHE_WRITE,
     SELF_HOSTED_CACHE,
     CacheSemantics,
     PriceCard,
@@ -143,7 +147,7 @@ from .types import (
     WorkloadSource,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "__version__",
@@ -170,6 +174,10 @@ __all__ = [
     "ANTHROPIC_CACHE",
     "OPENAI_CACHE_LEGACY",
     "OPENAI_CACHE_CURRENT",
+    "OPENAI_CACHE_WRITE",
+    "DEEPSEEK_CACHE",
+    "GEMINI_CACHE",
+    "KIMI_CACHE",
     "SELF_HOSTED_CACHE",
     # delegation
     "TaskPhase",
